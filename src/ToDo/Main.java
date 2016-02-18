@@ -1,3 +1,4 @@
+package ToDo;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -12,37 +13,48 @@ public class Main {
 	Connection conn = null;
 	PreparedStatement ps = null;
 	ResultSet rs = null;
+	String db = null;
+	String host = null;
 	
 	public Main(String url) {
 		String[] urlsplit = url.split("/");
-		String host = urlsplit[0];
-		String db = urlsplit[1];
+		host = urlsplit[0];
+		db = urlsplit[1];
 		try {
-			conn = DriverManager.getConnection("jdbc:mysql://" + url +"?" + "user=root");
-			System.out.println("Got Mysql database connection");
+			System.out.println("Trying to connect to database @ "+ url);
+			conn = DriverManager.getConnection("jdbc:mysql://" + url +"?" + "user=root&password=comp6302&useSSL=false");
 		} catch (SQLException ex) {
 			System.out.println("Cannot connect to DB: "+ db);
 			try {
 				// connect to the mysql server and create the db
-				conn = DriverManager.getConnection("jdbc:mysql://"+ host + "?" + "user=root");
-				ps = conn.prepareStatement("CREATE DATABASE lab1_michaelhollister");
+				conn = DriverManager.getConnection("jdbc:mysql://"+ host + "?" + "user=root&password=comp6302&useSSL=false");
+				System.out.println("Going to try to create DB: "+db);
+				ps = conn.prepareStatement("CREATE DATABASE "+ db);
 				ps.execute();
-				//makes the table
-				String sql = "CREATE TABLE `lab1_michaelhollister`.`todo` (" +
-							"`id` INT NOT NULL," +
-							"`message` VARCHAR(255) NULL," +
-							"`timestamp` TIMESTAMP NULL," +
-							"PRIMARY KEY (`id`)," +
-							" UNIQUE INDEX `id_UNIQUE` (`id` ASC));";
-				ps = conn.prepareStatement("CREATE DATABASE lab1_michaelhollister");
-				ps.execute(sql);
-				// close the connection and reconnect to the database
+				System.out.println("Created DB: "+ db + " sucessfully");
 				conn.close();
-				conn = DriverManager.getConnection("jdbc:mysql://" + url +"?" + "user=root");
-				System.out.println("Got Mysql database connection");
 			} catch (SQLException sqle) {
-				System.out.println("Cannot create DB: "+ db +" on MySQL Server. Is it running?");
+				System.out.println("Cannot create DB: "+ db +" on MySQL Server. Is it running? Exiting...");
+				System.exit(1);
 			}
+		}
+		try {
+			conn = DriverManager.getConnection("jdbc:mysql://" + url +"?" + "user=root&password=comp6302&useSSL=false");
+			System.out.println("Got Mysql database connection");
+			//makes the table
+			String sql = "CREATE TABLE `todo` (" +
+						"`id` INT NOT NULL," +
+						"`message` VARCHAR(255) NULL," +
+						"`timestamp` TIMESTAMP NULL," +
+						"PRIMARY KEY (`id`)," +
+						" UNIQUE INDEX `id_UNIQUE` (`id` ASC));";
+			ps = conn.prepareStatement(sql);
+			try {
+				ps.execute();
+			}catch (SQLException se) {}
+		}catch (SQLException sqle) {
+			sqle.printStackTrace();
+			System.out.println("Cannot create DB: "+ db +" on MySQL Server. Is it running?");
 		}
 	}
 	public static boolean isInteger(String s) {
@@ -66,29 +78,36 @@ public class Main {
 		 */
 		
 		// check if already in the database
-		rs = getToDo(id);
-		if (rs.getString("message") == null || rs.getString("message").equals("")) {
+		String msg = getToDo(id);
+		if (msg == null || msg.equals("")) {
 			// insert if not
-			ps = conn.prepareStatement("INSERT INTO todo ('id', 'message', 'timestamp') values (?, ?, ?);");
+			ps = conn.prepareStatement("INSERT INTO todo(`id`, `message`, `timestamp`) VALUES (?,?,?)");
 			ps.setInt(1, id);
 			ps.setString(2, message);
 			ps.setTimestamp(3, new Timestamp(new Date().getTime()));
+			System.out.println("Inserted message: '"+message+"' successfully");
 		}else {
 			// update if it is
-			ps = conn.prepareStatement("UPDATE todo SET 'message'=\"?\", 'timestamp'=\"?\" WHERE 'id'=?;");
+			ps = conn.prepareStatement("UPDATE todo SET `message`=?, `timestamp`=? WHERE `id`=?;");
 			ps.setString(1, message);
 			ps.setTimestamp(2, new Timestamp(new Date().getTime()));
 			ps.setInt(3, id);
+			System.out.println("Updated message: '"+message+"' successfully");
 		}
 		ps.executeUpdate(); //this works for insert and update
 	}
-	private ResultSet getToDo(int id) throws SQLException {
+	private String getToDo(int id) throws SQLException {
 		/*
 		 * Retrieves and displays the todo message to the console and when it was posted.
 		 */
 		ps = conn.prepareStatement("SELECT message FROM todo WHERE id = ?");
-		ps.setInt(1, id );
-		return ps.executeQuery();
+		ps.setInt(1, id);
+		rs = ps.executeQuery();
+		String message = "";
+		while(rs.next()) {
+			message = rs.getString("message").toString();
+		}
+		return message;
 		
 	}
 	private ResultSet getAllToDos() throws SQLException {
@@ -102,9 +121,11 @@ public class Main {
 		/*
 		 * Deletes the todo message at the given id from the database.
 		 */
-		ps = conn.prepareStatement("DELETE * FROM todo WHERE id = ?");
+		ps = conn.prepareStatement("DELETE FROM todo WHERE id = ?");
 		ps.setInt(1, id );
-		ps.executeUpdate();	
+		ps.executeUpdate();
+		System.out.println("DELETED successfully");
+
 	}
 	private void replicateDB(String url) throws SQLException {
 		/*
@@ -127,23 +148,36 @@ public class Main {
 		 // Main loop
 		
 		while (true) {
+			System.out.println("\nEnter a command...");
 			input = sc.nextLine();
 			String[] cmd = input.split("\\s+");
 			String method = cmd[0].toUpperCase();
 			if (method.equals("POST") && cmd.length >= 3 && isInteger(cmd[1])) {
 				String message = "";
 				for (int i=2;i<cmd.length;i++) {
-					message += cmd[i] + " ";
+					message += cmd[i];
+					if (i != cmd.length-1) {
+						message += " ";
+					}
 				}
 				m.postToDo(Integer.parseInt(cmd[1]), message);
 			}else if (method.equals("GET") && cmd.length == 1) {
 				m.rs = m.getAllToDos();
+				int count = 0;
 				while(m.rs.next()) {
 					System.out.println("<" + m.rs.getInt("id") + ">, <" + m.rs.getString("message") + ">");
+					count++;
+				}
+				if (count == 0) {
+					System.out.println("NO MESSAGES TO DISPLAY");
 				}
 			}else if (method.equals("GET") && cmd.length == 2 && isInteger(cmd[1])) {
-				m.rs = m.getToDo(Integer.parseInt(cmd[1]));
-				System.out.println(m.rs.getString("message"));
+				String message = m.getToDo(Integer.parseInt(cmd[1]));
+				if (message == null || message.equals("")) {
+					System.out.println("NO MESSAGE TO DISPLAY");
+				}else {
+					System.out.println("MESSAGE: '"+message+"'");
+				}
 			}else if (method.equals("DELETE") && cmd.length == 2 && isInteger(cmd[1])) {
 				m.deleteToDo(Integer.parseInt(cmd[1]));
 			}else if (method.equals("REPLICATE") && cmd.length == 2) {
